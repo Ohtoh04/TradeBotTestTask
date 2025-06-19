@@ -7,20 +7,104 @@
              xmlns:cal="http://www.caliburnproject.org"
              mc:Ignorable="d" 
              d:DesignHeight="450" d:DesignWidth="800">
-    <DockPanel>
-        <StackPanel Orientation="Horizontal" DockPanel.Dock="Top" Margin="5">
-            <TextBlock Text="Pair:" VerticalAlignment="Center" Margin="0,0,4,0"/>
-            <TextBox Width="100" Text="{Binding Pair, UpdateSourceTrigger=PropertyChanged}"/>
-            <Button Content="Connect"   Margin="6,0" cal:Message.Attach="Connect"   IsEnabled="{Binding CanConnect}"/>
-            <Button Content="Disconnect" cal:Message.Attach="Disconnect" IsEnabled="{Binding CanDisconnect}"/>
-        </StackPanel>
-        <DataGrid ItemsSource="{Binding Trades}" AutoGenerateColumns="False" CanUserAddRows="False">
-            <DataGrid.Columns>
-                <DataGridTextColumn Header="Time"   Binding="{Binding Time}" Width="*"/>
-                <DataGridTextColumn Header="Side"   Binding="{Binding Side}" Width="60"/>
-                <DataGridTextColumn Header="Price"  Binding="{Binding Price}" Width="*"/>
-                <DataGridTextColumn Header="Amount" Binding="{Binding Amount}" Width="*"/>
-            </DataGrid.Columns>
-        </DataGrid>
-    </DockPanel>
+    <!--Interface is a wee bit crappy but it is u s a b l e for testing purposes-->
+        <Grid Background="White">
+        <Grid.RowDefinitions>
+            <RowDefinition />
+            <RowDefinition />
+        </Grid.RowDefinitions>
+
+        <DockPanel Grid.Row="0">
+            <StackPanel Orientation="Horizontal" DockPanel.Dock="Top" Margin="5">
+                <TextBlock Text="Base:" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                <ComboBox Width="80"
+                    ItemsSource="{Binding CurrencyOptions}"
+                    SelectedItem="{Binding BaseCurrency, Mode=TwoWay}"
+                    Margin="0,0,6,0"/>
+
+                <TextBlock Text="Quote:" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                <ComboBox Width="80"
+                    ItemsSource="{Binding CurrencyOptions}"
+                    SelectedItem="{Binding QuoteCurrency, Mode=TwoWay}"
+                    Margin="0,0,6,0"/>
+                
+                <Button Content="Connect"   Margin="6,0" cal:Message.Attach="Connect"   IsEnabled="{Binding CanConnect}"/>
+                <Button Content="Disconnect" cal:Message.Attach="Disconnect" IsEnabled="{Binding CanDisconnect}"/>
+            </StackPanel>
+            <DataGrid ItemsSource="{Binding Trades}" AutoGenerateColumns="False" CanUserAddRows="False">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="Time"   Binding="{Binding Time}"   Width="*"/>
+                    <DataGridTextColumn Header="Side"   Binding="{Binding Side}"   Width="60"/>
+                    <DataGridTextColumn Header="Price"  Binding="{Binding Price}"  Width="*"/>
+                    <DataGridTextColumn Header="Amount" Binding="{Binding Amount}" Width="*"/>
+                </DataGrid.Columns>
+            </DataGrid>
+        </DockPanel>
+
+        <DockPanel Grid.Row="1">
+            <Grid DockPanel.Dock="Top" Margin="5">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="6*"/>
+                </Grid.ColumnDefinitions>
+                
+                <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                    <TextBlock Text="Count:" VerticalAlignment="Center"/>
+                    <TextBox Width="50" Text="{Binding Count, Mode=TwoWay}"/>
+                    <Button Content="Fetch trades"
+                        cal:Message.Attach="FetchTrades"
+                        IsEnabled="{Binding CanFetchTrades}" VerticalAlignment="Center" />
+                </StackPanel>
+
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="5">
+                    <TextBlock Text="Period (s):" VerticalAlignment="Center" />
+                    <TextBox Width="50" Text="{Binding CandleRequest.PeriodInSec, Mode=TwoWay}" />
+
+                    <TextBlock Text="From:" VerticalAlignment="Center" />
+                    <DatePicker SelectedDate="{Binding CandleRequest.From, Mode=TwoWay}"  />
+
+                    <TextBlock Text="To:" VerticalAlignment="Center" />
+                    <DatePicker SelectedDate="{Binding CandleRequest.To, Mode=TwoWay}" />
+
+                    <TextBlock Text="Count:" VerticalAlignment="Center"/>
+                    <TextBox Width="50" Text="{Binding CandleRequest.Count, Mode=TwoWay}"/>
+
+
+                    <Button Content="Fetch candles"
+                        cal:Message.Attach="FetchCandles"
+                        IsEnabled="{Binding CanFetchCandles}" />
+                </StackPanel>
+            </Grid>
+
+            <DockPanel>
+                <DataGrid DockPanel.Dock="Left"
+                  ItemsSource="{Binding FetchedTrades}"
+                  AutoGenerateColumns="False"
+                  CanUserAddRows="False"
+                  Width="250">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Time"   Binding="{Binding Time}"   Width="*" />
+                        <DataGridTextColumn Header="Side"   Binding="{Binding Side}"   Width="60" />
+                        <DataGridTextColumn Header="Price"  Binding="{Binding Price}"  Width="*" />
+                        <DataGridTextColumn Header="Amount" Binding="{Binding Amount}" Width="*" />
+                    </DataGrid.Columns>
+                </DataGrid>
+
+                <DataGrid DockPanel.Dock="Right"
+                  ItemsSource="{Binding Candles}"
+                  AutoGenerateColumns="False"
+                  CanUserAddRows="False">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Open price"   Binding="{Binding OpenPrice}"   Width="*" />
+                        <DataGridTextColumn Header="High price"   Binding="{Binding HighPrice}"   Width="60" />
+                        <DataGridTextColumn Header="Low price"    Binding="{Binding LowPrice}"    Width="*" />
+                        <DataGridTextColumn Header="Close price"  Binding="{Binding ClosePrice}"  Width="*" />
+                        <DataGridTextColumn Header="Total price"  Binding="{Binding TotalPrice}"  Width="*" />
+                        <DataGridTextColumn Header="Total volume" Binding="{Binding TotalVolume}" Width="*" />
+                        <DataGridTextColumn Header="Open time"    Binding="{Binding OpenTime}"    Width="*" />
+                    </DataGrid.Columns>
+                </DataGrid>
+            </DockPanel>
+        </DockPanel>
+    </Grid>
 </UserControl>

@@ -1,8 +1,9 @@
 ﻿using System.Net.Http.Json;
-using System;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http.Extensions;
+using TradeBotTestTask.Application.Mapping;
 using TradeBotTestTask.Application.Models.Candles;
+using TradeBotTestTask.Application.Models.Trades;
 using TradeBotTestTask.Application.Services.Interfaces;
 using TradeBotTestTask.Domain.Entities;
 
@@ -43,7 +44,24 @@ public class BitfinexRestClient : IBitfinexRestClient
         var queryBuilder = new QueryBuilder { { "limit", maxCount.ToString() }, { "sort", "1" } };
         var uri = path + queryBuilder.ToQueryString();
 
-        return await _httpClient.GetFromJsonAsync<Trade[]>(uri)
-               ?? Array.Empty<Trade>();
+        try
+        {
+            using var res = await _httpClient.GetAsync(uri);
+            res.EnsureSuccessStatusCode();
+
+            await using var stream = await res.Content.ReadAsStreamAsync();
+
+            var trades = await JsonSerializer.DeserializeAsync<BitfinexTradeDto[]>(stream)
+                         ?? Array.Empty<BitfinexTradeDto>();
+
+            return trades.ToTrade(pair);
+        }
+        catch ( Exception ex)
+        {
+            Console.WriteLine("Exception msg");
+        }
+
+        return Array.Empty<Trade>();
+
     }
 }

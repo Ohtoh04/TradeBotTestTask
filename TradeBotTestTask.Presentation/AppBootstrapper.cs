@@ -31,6 +31,7 @@ public class AppBootstrapper : BootstrapperBase
         // Caliburn services
         serviceCollection.AddSingleton<IWindowManager, WindowManager>();
         serviceCollection.AddSingleton<IEventAggregator, EventAggregator>();
+        serviceCollection.AddTransient<SequentialResult>();
 
         serviceCollection.AddInfrastructureExtensions(configuration);
         serviceCollection.AddApplicationExtensions(configuration);
@@ -59,10 +60,4 @@ public class AppBootstrapper : BootstrapperBase
     {
         return _services.GetServices(service);
     }
-
-    protected override void BuildUp(object instance)
-    {
-        _services.GetRequiredService(instance.GetType());
-    }
-
 }

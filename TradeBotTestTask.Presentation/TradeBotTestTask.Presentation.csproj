@@ -30,6 +30,7 @@
   <ItemGroup>
     <ProjectReference Include="..\TradeBotTestTask.Application\TradeBotTestTask.Application.csproj" />
     <ProjectReference Include="..\TradeBotTestTask.Infrastructure\TradeBotTestTask.Infrastructure.csproj" />
+    <ProjectReference Include="..\TradeBotTestTask.Shared\TradeBotTestTask.Shared.csproj" />
   </ItemGroup>
 
 </Project>
