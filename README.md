@@ -1,0 +1,3 @@
+# HOW TO USE
+In the main view you will see 4 datagrids: two on the top for ws subscriptions, bottom two - for rest. Above the grids you will see two combo boxes with currency choices - they are applied to all fetched information. Above grids for trades and candles you will see some small inputs -they are applied to both ws and rest clients. 
+To access second view with protfolio, use menu bar on top. Go to views->portfolio and a new window will open. There, press refresh button and after some time rates will be fetched and values calculated. There is a little problem with one of the coins: when fetching rate with any other currency, it returns null, so it defaults to 0.
