@@ -1,238 +1,190 @@
-﻿using System.Buffers;
-using System.Collections.Concurrent;
-using System.Net.WebSockets;
+﻿using System.Net.WebSockets;
 using System.Text.Json;
-using System.Text;
-using System.Threading.Channels;
 using TradeBotTestTask.Application.Models.Candles;
 using TradeBotTestTask.Application.Services.Interfaces;
 using TradeBotTestTask.Domain.Entities;
 using TradeBotTestTask.Shared.Options;
 using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Options;
+using TradeBotTestTask.Infrastructure.Observers;
+using Websocket.Client;
+using System.Reactive.Linq;
+using TradeBotTestTask.Shared.Utils;
+using TradeBotTestTask.Shared.Extensions;
 
 namespace TradeBotTestTask.Infrastructure.Services.Bitfinex;
 
-public sealed class BitfinexWsClient : IBitfinexWsClient, IDisposable
+public sealed class BitfinexWsClient : IBitfinexWsClient, IAsyncDisposable
 {
-    private readonly Uri _wsEndpoint = new("wss://api-pub.bitfinex.com/ws/2");
+    private readonly Uri _url;
 
-    private ClientWebSocket? _socket;
-    private readonly SemaphoreSlim _connectLock = new(1, 1);
+    private WebsocketClient? _tradesWs;
+    private WebsocketClient? _candlesWs;
 
-    private readonly ConcurrentDictionary<int, IChannelObserver> _subscriptions = new();
+    private TradesObserver? _tradesObs;
+    private CandlesObserver? _candlesObs;
 
-    public BitfinexWsClient(IOptions<StockExchangeInfrastructureOptions> options)
+    private TaskCompletionSource<int>? _tradesTcs;
+    private TaskCompletionSource<int>? _candlesTcs;
+
+    public BitfinexWsClient(IOptions<StockExchangeInfrastructureOptions> opt)
     {
-        if (!String.IsNullOrEmpty(options.Value.BaseWsUrl))
-            _wsEndpoint = new(options.Value.BaseWsUrl);
+        _url = !string.IsNullOrWhiteSpace(opt.Value.BaseWsUrl)
+            ? new Uri(opt.Value.BaseWsUrl, UriKind.Absolute)
+            : new Uri("wss://api-pub.bitfinex.com/ws/2");
     }
 
-    public async IAsyncEnumerable<Trade> StreamTradesAsync(string pair, [EnumeratorCancellation] CancellationToken ct = default)
+    public async IAsyncEnumerable<Trade> StreamTradesAsync(
+        string pair,
+        [EnumeratorCancellation] CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(pair))
-            throw new ArgumentException("pair is required", nameof(pair));
+        if (string.IsNullOrWhiteSpace(pair)) throw new ArgumentException("pair", nameof(pair));
 
-        var channel = await EnsureSubscriptionAsync("trades", NormalizePair(pair), ct);
-
-        await foreach (var item in channel.GetAsyncEnumerable<Trade>(ct))
-            yield return item;
+        var obs = await EnsureTradesSubscriptionAsync(pair, ct);
+        await foreach (var t in obs.ReadAllAsync(ct))
+            yield return t;
     }
 
-    public async IAsyncEnumerable<Candle> StreamCandlesAsync(string pair, int periodInSec, [EnumeratorCancellation] CancellationToken ct = default)
+    public async IAsyncEnumerable<Candle> StreamCandlesAsync(
+        string pair,
+        int periodSec,
+        [EnumeratorCancellation] CancellationToken ct = default)
     {
-        var key = $"trade:{periodInSec}:{NormalizePair(pair)}";
-        var channel = await EnsureSubscriptionAsync("candles", key, ct);
+        if (periodSec <= 0) throw new ArgumentOutOfRangeException(nameof(periodSec));
 
-        await foreach (var item in channel.GetAsyncEnumerable<Candle>(ct))
+        var obs = await EnsureCandlesSubscriptionAsync(pair, periodSec, ct);
+        await foreach (var c in obs.ReadAllAsync(ct))
         {
-            item.Pair = pair;
-            yield return item;
+            c.Pair = pair;
+            yield return c;
         }
     }
 
-    private async Task<IChannelObserver> EnsureSubscriptionAsync(string channel, string symbolOrKey, CancellationToken ct)
+    private async Task EnsureTradesConnectedAsync()
     {
-        await EnsureConnectedAsync(ct);
+        if (_tradesWs?.IsRunning == true) return;
 
-        var subscribe = new
+        _tradesWs = NewClient(HandleTradesFrame);
+        await _tradesWs.StartOrFail();
+    }
+
+    private async Task EnsureCandlesConnectedAsync()
+    {
+        if (_candlesWs?.IsRunning == true) return;
+
+        _candlesWs = NewClient(HandleCandlesFrame);
+        await _candlesWs.StartOrFail();
+    }
+
+    private WebsocketClient NewClient(Action<JsonElement> frameHandler)
+    {
+        var ws = new WebsocketClient(_url)
         {
-            @event = "subscribe",
-            channel = channel,
-            symbol = channel == "trades" ? symbolOrKey : null,
-            key = channel == "candles" ? symbolOrKey : null
+            IsReconnectionEnabled = true,
+            ReconnectTimeout = TimeSpan.FromSeconds(30)
         };
 
-        var payload = JsonSerializer.Serialize(subscribe);
-        await _socket!.SendAsync(Encoding.UTF8.GetBytes(payload), WebSocketMessageType.Text, true, ct);
-
-        while (true)
-        {
-            var msg = await ReadFrameAsync(ct);
-            if (msg.TryGetProperty("event", out var ev) && ev.GetString() == "subscribed")
-            {
-                if (msg.GetProperty("channel").GetString() == channel &&
-                    (channel == "trades" && msg.GetProperty("symbol").GetString() == symbolOrKey ||
-                     channel == "candles" && msg.GetProperty("key").GetString() == symbolOrKey))
-                {
-                    var chanId = msg.GetProperty("chanId").GetInt32();
-                    var observer = channel switch
-                    {
-                        // "trades" => new TradesObserver(chanId),
-                        "candles" => new CandlesObserver(chanId),
-                        _ => throw new InvalidOperationException()
-                    };
-                    _subscriptions[chanId] = observer;
-                    return observer;
-                }
-            }
-        }
+        ws.MessageReceived
+          .Where(m => m.MessageType == WebSocketMessageType.Text)
+          .Select(m => JsonDocument.Parse(m.Text).RootElement)
+          .Subscribe(frameHandler);
+        return ws;
     }
 
-    private async Task EnsureConnectedAsync(CancellationToken ct)
+    private async Task<TradesObserver> EnsureTradesSubscriptionAsync(string pair, CancellationToken ct)
     {
-        if (_socket?.State == WebSocketState.Open) return;
+        if (_tradesObs is { Pair: var p } && p == pair) return _tradesObs;
 
-        await _connectLock.WaitAsync(ct);
-        try
+        await EnsureTradesConnectedAsync();
+        _tradesTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        _tradesWs!.Send(JsonSerializer.Serialize(new
         {
-            if (_socket?.State == WebSocketState.Open) return; 
+            @event = "subscribe",
+            channel = "trades",
+            symbol = pair
+        }));
 
-            _socket?.Dispose();
-            _socket = new ClientWebSocket();
-            await _socket.ConnectAsync(_wsEndpoint, ct);
-
-            _ = Task.Run(() => PumpAsync(_socket, ct));
-        }
-        finally { _connectLock.Release(); }
+        var chanId = await _tradesTcs.Task.WaitAsync(ct);
+        _tradesObs = new TradesObserver(chanId, pair);
+        return _tradesObs;
     }
 
-    private async Task PumpAsync(ClientWebSocket socket, CancellationToken ct)
+    private async Task<CandlesObserver> EnsureCandlesSubscriptionAsync(string pair, int periodSec, CancellationToken ct)
     {
-        try
-        {
-            while (!ct.IsCancellationRequested && socket.State == WebSocketState.Open)
-            {
-                var frame = await ReadFrameAsync(ct);
+        if (_candlesObs != null)
+            return _candlesObs;
 
-                if (frame.ValueKind == JsonValueKind.Array && frame.GetArrayLength() == 2 && frame[1].ValueKind == JsonValueKind.String)
-                    continue;
+        await EnsureCandlesConnectedAsync();
+        _candlesTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-                if (frame.ValueKind == JsonValueKind.Array && frame[0].ValueKind == JsonValueKind.Number)
-                {
-                    var chanId = frame[0].GetInt32();
-                    if (_subscriptions.TryGetValue(chanId, out var obs))
-                        obs.OnMessage(frame);
-                }
-            }
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        var key = $"trade:{PeriodFactory.FromSeconds(periodSec).GetDescription()}:{pair}";
+        _candlesWs!.Send(JsonSerializer.Serialize(new
         {
-            // Could be a logger but it is just a test task so i didnt bother
-            Console.WriteLine(ex.Message, "WS pump terminated – will reconnect on next subscription");
-        }
+            @event = "subscribe",
+            channel = "candles",
+            key
+        }));
+
+        var chanId = await _candlesTcs.Task.WaitAsync(ct);
+        _candlesObs = new CandlesObserver(chanId);
+        return _candlesObs;
     }
 
-    private async Task<JsonElement> ReadFrameAsync(CancellationToken ct)
+    private void HandleTradesFrame(JsonElement f)
     {
-        var buffer = ArrayPool<byte>.Shared.Rent(1 << 16);
-        try
-        {
-            var segment = new ArraySegment<byte>(buffer);
-            var result = await _socket!.ReceiveAsync(segment, ct);
-            if (result.MessageType != WebSocketMessageType.Text)
-                throw new InvalidOperationException("Unexpected WS frame type");
+        if (IsHeartbeat(f)) return;
 
-            var json = Encoding.UTF8.GetString(buffer, 0, result.Count);
-            return JsonSerializer.Deserialize<JsonElement>(json);
+        if (IsSubscribedAck(f, out var id))
+        {
+            _tradesTcs?.TrySetResult(id);
+            return;
         }
-        finally { ArrayPool<byte>.Shared.Return(buffer); }
+
+        if (f.ValueKind == JsonValueKind.Array && f[0].GetInt32() == _tradesObs?.ChanId)
+            _tradesObs.OnMessage(f);
     }
 
-    private interface IChannelObserver
+    private void HandleCandlesFrame(JsonElement f)
     {
-        void OnMessage(JsonElement element);
-        IAsyncEnumerable<T> GetAsyncEnumerable<T>(CancellationToken ct);
-    }
-    
-    private sealed class TradesObserver : ChannelObserverBase<Trade>
-    {
-        private readonly string _pair;
-        public TradesObserver(int id, string pair) : base(id) => _pair = pair;
-        protected override bool TryParse(JsonElement msg, out Trade item)
+        if (IsHeartbeat(f)) return;
+
+        if (IsSubscribedAck(f, out var id))
         {
-            if (msg.GetArrayLength() < 3 || msg[1].GetString() != "tu") { item = default!; return false; }
-            var arr = msg[2];
-            var id = arr[0].GetInt64();
-            var mts = arr[1].GetInt64();
-            var amt = arr[2].GetDecimal();
-            var prc = arr[3].GetDecimal();
-            item = new Trade
-            {
-                Id = id.ToString(),
-                Pair = _pair,
-                Time = DateTimeOffset.FromUnixTimeMilliseconds(mts),
-                Amount = Math.Abs(amt),
-                Price = prc,
-                Side = amt > 0 ? "buy" : "sell"
-            };
+            _candlesTcs?.TrySetResult(id);
+            return;
+        }
+
+        if (f.ValueKind == JsonValueKind.Array && f[0].GetInt32() == _candlesObs?.ChanId)
+            _candlesObs.OnMessage(f);
+    }
+
+    private static bool IsHeartbeat(JsonElement f) =>
+        f.ValueKind == JsonValueKind.Array &&
+        f.GetArrayLength() == 2 &&
+        f[1].ValueKind == JsonValueKind.String;
+
+    private static bool IsSubscribedAck(JsonElement f, out int id)
+    {
+        id = 0;
+        if (f.ValueKind == JsonValueKind.Object &&
+            f.TryGetProperty("event", out var evt) && evt.GetString() == "subscribed")
+        {
+            id = f.GetProperty("chanId").GetInt32();
             return true;
         }
+        return false;
     }
 
-    private sealed class CandlesObserver : ChannelObserverBase<Candle>
+    public async ValueTask DisposeAsync()
     {
-        public CandlesObserver(int id) : base(id) { }
-        protected override bool TryParse(JsonElement msg, out Candle item)
-        {
-            // Message format: [chanId, [MTS, OPEN, CLOSE, HIGH, LOW, VOLUME]]
-            if (msg.GetArrayLength() < 2 || msg[1].ValueKind != JsonValueKind.Array)
-            {
-                item = default!; return false;
-            }
-            var arr = msg[1];
-            var mts = arr[0].GetInt64();
-            item = new Candle
-            {
-                OpenTime = DateTimeOffset.FromUnixTimeMilliseconds(mts),
-                OpenPrice = arr[1].GetDecimal(),
-                ClosePrice = arr[2].GetDecimal(),
-                HighPrice = arr[3].GetDecimal(),
-                LowPrice = arr[4].GetDecimal(),
-                TotalVolume = arr[5].GetDecimal(),
-                TotalPrice = 0m // not provided by Bitfinex
-            };
-            return true;
-        }
-    }
+        if (_tradesWs != null)
+            await _tradesWs.Stop(WebSocketCloseStatus.NormalClosure, "");
 
-    private abstract class ChannelObserverBase<T> : IChannelObserver
-    {
-        private readonly Channel<T> _channel = Channel.CreateUnbounded<T>(new() { SingleReader = true });
-        protected ChannelObserverBase(int chanId) => ChanId = chanId;
-        public int ChanId { get; }
+        if (_candlesWs != null)
+            await _candlesWs.Stop(WebSocketCloseStatus.NormalClosure, "");
 
-        public void OnMessage(JsonElement element)
-        {
-            if (TryParse(element, out var item)) _channel.Writer.TryWrite(item);
-        }
-        protected abstract bool TryParse(JsonElement msg, out T item);
-        public IAsyncEnumerable<T> GetAsyncEnumerable<T>(CancellationToken ct) => throw new NotImplementedException();
-            //_channel.Reader.ReadAllAsync(ct).Adapt<T>();
-    }
-
-    private static string NormalizePair(string p) =>
-        "t" + p.Replace("/", string.Empty).Replace("-", string.Empty).ToUpperInvariant();
-
-    public void Dispose()
-    {
-        try 
-        {
-            _socket?.Abort();
-            _socket?.Dispose();
-        }
-        catch { }
-
-        _connectLock.Dispose();
+        _tradesWs?.Dispose();
+        _candlesWs?.Dispose();
     }
 }

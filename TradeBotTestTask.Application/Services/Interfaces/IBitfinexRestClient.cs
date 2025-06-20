@@ -7,4 +7,6 @@ public interface IBitfinexRestClient
 {
     Task<IEnumerable<Trade>> GetNewTradesAsync(string pair, int maxCount);
     Task<IEnumerable<Candle>> GetCandleSeriesAsync(GetCandleSeriesModel model);
+    Task<decimal> GetConversionRateAsync(string fromCcy, string toCcy);
+
 }

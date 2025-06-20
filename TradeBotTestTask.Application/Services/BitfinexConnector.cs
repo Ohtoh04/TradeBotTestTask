@@ -6,7 +6,7 @@ using TradeBotTestTask.Domain.Entities;
 
 namespace TradeBotTestTask.Application.Services;
 
-public class BitfinexConnector : ITestConnector, IDisposable
+public class BitfinexConnector : ITestConnector
 {
     private readonly IBitfinexRestClient _rest;
     private readonly IBitfinexWsClient _ws;
@@ -35,6 +35,13 @@ public class BitfinexConnector : ITestConnector, IDisposable
         return await _rest.GetNewTradesAsync(pair, maxCount);
     }
 
+    public async Task<decimal> ConvertCurrencyAsync(string fromCcy, string toCcy, decimal amount)
+    {
+        var rate = await _rest.GetConversionRateAsync(fromCcy, toCcy);
+
+        return rate * amount;
+    }
+
     #endregion
 
     #region Socket
@@ -43,73 +50,50 @@ public class BitfinexConnector : ITestConnector, IDisposable
     public event Action<Trade> NewSellTrade;
     public event Action<Candle> CandleSeriesProcessing;
 
-    private readonly ConcurrentDictionary<string, CancellationTokenSource> _tradeSubs = new();
-    private readonly ConcurrentDictionary<(string Pair, int Period), CancellationTokenSource> _candleSubs = new();
+    private readonly CancellationTokenSource _tradesSubCts = new();
+    private readonly CancellationTokenSource _candlesSubCts = new();
 
     public void SubscribeTrades(string pair, int maxCount = 100)
     {
         if (string.IsNullOrWhiteSpace(pair))
             throw new ArgumentException("pair required", nameof(pair));
 
-        if (_tradeSubs.ContainsKey(pair))
-            return; 
-
-        var cts = new CancellationTokenSource();
-
-        if (!_tradeSubs.TryAdd(pair, cts))
-            return;
-
         _ = Task.Run(async () =>
         {
             try
             {
-                await foreach (var t in _ws.StreamTradesAsync(pair, cts.Token))
+                await foreach (var t in _ws.StreamTradesAsync(pair, _candlesSubCts.Token))
                 {
                     if (t.Side.Equals("buy", StringComparison.OrdinalIgnoreCase)) NewBuyTrade?.Invoke(t);
                     else NewSellTrade?.Invoke(t);
                 }
             }
             catch (OperationCanceledException) { }
-            finally { _tradeSubs.TryRemove(pair, out _); }
-        }, cts.Token);
+        }, _tradesSubCts.Token);
     }
 
     public void UnsubscribeTrades(string pair)
     {
-        if (_tradeSubs.TryRemove(pair, out var cts)) cts.Cancel();
+        _tradesSubCts.Cancel();
     }
 
     public void SubscribeCandles(string pair, int periodInSec, DateTimeOffset? from = null, DateTimeOffset? to = null, long? count = 0)
     {
-        var key = (pair, periodInSec);
-        if (_candleSubs.ContainsKey(key)) return;
-        var cts = new CancellationTokenSource();
-        if (!_candleSubs.TryAdd(key, cts)) return;
-
         _ = Task.Run(async () =>
         {
             try
             {
-                await foreach (var c in _ws.StreamCandlesAsync(pair, periodInSec, cts.Token))
+                await foreach (var c in _ws.StreamCandlesAsync(pair, periodInSec, _candlesSubCts.Token))
                     CandleSeriesProcessing?.Invoke(c);
             }
             catch (OperationCanceledException) { }
-            finally { _candleSubs.TryRemove(key, out _); }
-        }, cts.Token);
+        }, _candlesSubCts.Token);
     }
 
     public void UnsubscribeCandles(string pair)
     {
-        foreach (var kv in _candleSubs.Where(k => k.Key.Pair == pair).ToList())
-        {
-            if (_candleSubs.TryRemove(kv.Key, out var cts)) cts.Cancel();
-        }
+        _candlesSubCts.Cancel();
+
     }
     #endregion
-
-    public void Dispose()
-    {
-        foreach (var c in _tradeSubs.Values) c.Cancel();
-        foreach (var c in _candleSubs.Values) c.Cancel();
-    }
 }

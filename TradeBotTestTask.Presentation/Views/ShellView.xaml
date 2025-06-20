@@ -4,107 +4,160 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
              xmlns:local="clr-namespace:TradeBotTestTask.Presentation.Views"
-             xmlns:cal="http://www.caliburnproject.org"
+             xmlns:sharedUtils="clr-namespace:TradeBotTestTask.Shared.Utils;assembly=TradeBotTestTask.Shared"
+             xmlns:cal="http://www.caliburnproject.org" xmlns:conv="clr-namespace:TradeBotTestTask.Presentation.Converters"
              mc:Ignorable="d" 
-             d:DesignHeight="450" d:DesignWidth="800">
-    <!--Interface is a wee bit crappy but it is u s a b l e for testing purposes-->
-        <Grid Background="White">
+             d:DesignHeight="600" d:DesignWidth="1000">
+    <UserControl.Resources>
+        <conv:EnumDescriptionConverter x:Key="EnumDescriptionConverter"/>
+        <conv:SecondsToPeriodConverter x:Key="SecondsToPeriodConverter"/>
+        <conv:DateTimeOffsetConverter x:Key="DtoConv" />
+    </UserControl.Resources>
+    <Grid Background="White" Margin="10">
         <Grid.RowDefinitions>
-            <RowDefinition />
-            <RowDefinition />
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <DockPanel Grid.Row="0">
-            <StackPanel Orientation="Horizontal" DockPanel.Dock="Top" Margin="5">
-                <TextBlock Text="Base:" VerticalAlignment="Center" Margin="0,0,4,0"/>
-                <ComboBox Width="80"
-                    ItemsSource="{Binding CurrencyOptions}"
-                    SelectedItem="{Binding BaseCurrency, Mode=TwoWay}"
-                    Margin="0,0,6,0"/>
+        <Menu Grid.Row="0">
+            <MenuItem Header="_File">
+                <MenuItem Header="E_xit" cal:Message.Attach="ExitApp"/>
+            </MenuItem>
+            <MenuItem Header="_View">
+                <MenuItem Header="_Portfolio…" cal:Message.Attach="OpenPortfolio"/>
+            </MenuItem>
+        </Menu>
 
-                <TextBlock Text="Quote:" VerticalAlignment="Center" Margin="0,0,4,0"/>
-                <ComboBox Width="80"
-                    ItemsSource="{Binding CurrencyOptions}"
-                    SelectedItem="{Binding QuoteCurrency, Mode=TwoWay}"
-                    Margin="0,0,6,0"/>
-                
-                <Button Content="Connect"   Margin="6,0" cal:Message.Attach="Connect"   IsEnabled="{Binding CanConnect}"/>
-                <Button Content="Disconnect" cal:Message.Attach="Disconnect" IsEnabled="{Binding CanDisconnect}"/>
-            </StackPanel>
-            <DataGrid ItemsSource="{Binding Trades}" AutoGenerateColumns="False" CanUserAddRows="False">
-                <DataGrid.Columns>
-                    <DataGridTextColumn Header="Time"   Binding="{Binding Time}"   Width="*"/>
-                    <DataGridTextColumn Header="Side"   Binding="{Binding Side}"   Width="60"/>
-                    <DataGridTextColumn Header="Price"  Binding="{Binding Price}"  Width="*"/>
-                    <DataGridTextColumn Header="Amount" Binding="{Binding Amount}" Width="*"/>
-                </DataGrid.Columns>
-            </DataGrid>
-        </DockPanel>
+        <StackPanel Orientation="Horizontal" Grid.Row="1" Margin="0,0,0,10" HorizontalAlignment="Left">
+            <TextBlock Text="Base:" VerticalAlignment="Center" Margin="0,0,5,0"/>
+            <ComboBox Width="100" ItemsSource="{Binding CurrencyOptions}" SelectedItem="{Binding BaseCurrency, Mode=TwoWay}" Margin="0,0,15,0"/>
 
-        <DockPanel Grid.Row="1">
-            <Grid DockPanel.Dock="Top" Margin="5">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="6*"/>
-                </Grid.ColumnDefinitions>
-                
-                <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                    <TextBlock Text="Count:" VerticalAlignment="Center"/>
-                    <TextBox Width="50" Text="{Binding Count, Mode=TwoWay}"/>
-                    <Button Content="Fetch trades"
-                        cal:Message.Attach="FetchTrades"
-                        IsEnabled="{Binding CanFetchTrades}" VerticalAlignment="Center" />
-                </StackPanel>
+            <TextBlock Text="Quote:" VerticalAlignment="Center" Margin="0,0,5,0"/>
+            <ComboBox Width="100" ItemsSource="{Binding CurrencyOptions}" SelectedItem="{Binding QuoteCurrency, Mode=TwoWay}" />
+        </StackPanel>
 
-                <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="5">
-                    <TextBlock Text="Period (s):" VerticalAlignment="Center" />
-                    <TextBox Width="50" Text="{Binding CandleRequest.PeriodInSec, Mode=TwoWay}" />
+        <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="1*"/>
+                <ColumnDefinition Width="1*"/>
+            </Grid.ColumnDefinitions>
 
-                    <TextBlock Text="From:" VerticalAlignment="Center" />
-                    <DatePicker SelectedDate="{Binding CandleRequest.From, Mode=TwoWay}"  />
+            <GroupBox Header="Trades" Grid.Column="0" Margin="0,0,10,0">
+                <DockPanel LastChildFill="True">
+                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,10" VerticalAlignment="Center">
+                        <TextBlock Text="Max Count:" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                        <TextBox Width="50" Text="{Binding TradesMaxCount, Mode=TwoWay}" Margin="0,0,15,0"/>
 
-                    <TextBlock Text="To:" VerticalAlignment="Center" />
-                    <DatePicker SelectedDate="{Binding CandleRequest.To, Mode=TwoWay}" />
+                        <Button Content="Connect" Margin="0,0,5,0" 
+                                cal:Message.Attach="ConnectTrades" 
+                                IsEnabled="{Binding CanConnectTrades}" />
+                        <Button Content="Disconnect" Margin="0,0,15,0" 
+                                cal:Message.Attach="DisconnectTrades" 
+                                IsEnabled="{Binding CanDisconnectTrades}" />
 
-                    <TextBlock Text="Count:" VerticalAlignment="Center"/>
-                    <TextBox Width="50" Text="{Binding CandleRequest.Count, Mode=TwoWay}"/>
+                        <Button Content="Fetch Trades" 
+                                cal:Message.Attach="FetchTrades" 
+                                IsEnabled="{Binding CanFetchTrades}" />
+                    </StackPanel>
 
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
 
-                    <Button Content="Fetch candles"
-                        cal:Message.Attach="FetchCandles"
-                        IsEnabled="{Binding CanFetchCandles}" />
-                </StackPanel>
-            </Grid>
+                        <DataGrid Grid.Row="0" ItemsSource="{Binding Trades}" AutoGenerateColumns="False" CanUserAddRows="False" Margin="0,0,0,5">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Time" Binding="{Binding Time}" Width="*"/>
+                                <DataGridTextColumn Header="Side" Binding="{Binding Side}" Width="60"/>
+                                <DataGridTextColumn Header="Price" Binding="{Binding Price}" Width="*"/>
+                                <DataGridTextColumn Header="Amount" Binding="{Binding Amount}" Width="*"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
 
-            <DockPanel>
-                <DataGrid DockPanel.Dock="Left"
-                  ItemsSource="{Binding FetchedTrades}"
-                  AutoGenerateColumns="False"
-                  CanUserAddRows="False"
-                  Width="250">
-                    <DataGrid.Columns>
-                        <DataGridTextColumn Header="Time"   Binding="{Binding Time}"   Width="*" />
-                        <DataGridTextColumn Header="Side"   Binding="{Binding Side}"   Width="60" />
-                        <DataGridTextColumn Header="Price"  Binding="{Binding Price}"  Width="*" />
-                        <DataGridTextColumn Header="Amount" Binding="{Binding Amount}" Width="*" />
-                    </DataGrid.Columns>
-                </DataGrid>
+                        <DataGrid Grid.Row="1" ItemsSource="{Binding FetchedTrades}" AutoGenerateColumns="False" CanUserAddRows="False">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Time" Binding="{Binding Time}" Width="*"/>
+                                <DataGridTextColumn Header="Side" Binding="{Binding Side}" Width="60"/>
+                                <DataGridTextColumn Header="Price" Binding="{Binding Price}" Width="*"/>
+                                <DataGridTextColumn Header="Amount" Binding="{Binding Amount}" Width="*"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </Grid>
+                </DockPanel>
+            </GroupBox>
 
-                <DataGrid DockPanel.Dock="Right"
-                  ItemsSource="{Binding Candles}"
-                  AutoGenerateColumns="False"
-                  CanUserAddRows="False">
-                    <DataGrid.Columns>
-                        <DataGridTextColumn Header="Open price"   Binding="{Binding OpenPrice}"   Width="*" />
-                        <DataGridTextColumn Header="High price"   Binding="{Binding HighPrice}"   Width="60" />
-                        <DataGridTextColumn Header="Low price"    Binding="{Binding LowPrice}"    Width="*" />
-                        <DataGridTextColumn Header="Close price"  Binding="{Binding ClosePrice}"  Width="*" />
-                        <DataGridTextColumn Header="Total price"  Binding="{Binding TotalPrice}"  Width="*" />
-                        <DataGridTextColumn Header="Total volume" Binding="{Binding TotalVolume}" Width="*" />
-                        <DataGridTextColumn Header="Open time"    Binding="{Binding OpenTime}"    Width="*" />
-                    </DataGrid.Columns>
-                </DataGrid>
-            </DockPanel>
-        </DockPanel>
+            <GroupBox Header="Candles" Grid.Column="1">
+                <DockPanel LastChildFill="True">
+                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,10" VerticalAlignment="Center">
+                        <TextBlock Text="Period (s):" VerticalAlignment="Center" />
+                        <ComboBox Width="100"
+                                  ItemsSource="{Binding Source={x:Static sharedUtils:PeriodEnumValues.All}}"
+                                  SelectedValuePath="." 
+                                  SelectedItem="{Binding CandleRequest.PeriodInSec, Mode=TwoWay, Converter={StaticResource SecondsToPeriodConverter}}">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding Converter={StaticResource EnumDescriptionConverter}}"/>
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                        
+                        <TextBlock Text="From:" VerticalAlignment="Center" />
+                        <DatePicker SelectedDate="{Binding CandleRequest.From, Mode=TwoWay,
+                            Converter={StaticResource DtoConv}}" />
+
+                        <TextBlock Text="To:" VerticalAlignment="Center" />
+                        <DatePicker SelectedDate="{Binding CandleRequest.To, Mode=TwoWay,
+                            Converter={StaticResource DtoConv}}" />
+
+                        <TextBlock Text="Count:" VerticalAlignment="Center" />
+                        <TextBox Width="50" Text="{Binding CandleRequest.Count, Mode=TwoWay}" />
+
+                        <Button Content="Connect" Margin="0,0,5,0" 
+                                cal:Message.Attach="ConnectCandles" 
+                                IsEnabled="{Binding CanConnectCandles}" />
+                        <Button Content="Disconnect" Margin="0,0,15,0" 
+                                cal:Message.Attach="DisconnectCandles" 
+                                IsEnabled="{Binding CanDisconnectCandles}" />
+
+                        <Button Content="Fetch Candles" 
+                                cal:Message.Attach="FetchCandles" 
+                                IsEnabled="{Binding CanFetchCandles}" />
+                    </StackPanel>
+
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+
+                        <DataGrid Grid.Row="0" ItemsSource="{Binding Candles}" AutoGenerateColumns="False" CanUserAddRows="False" Margin="0,0,0,5">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Open price" Binding="{Binding OpenPrice}" Width="*"/>
+                                <DataGridTextColumn Header="High price" Binding="{Binding HighPrice}" Width="60"/>
+                                <DataGridTextColumn Header="Low price" Binding="{Binding LowPrice}" Width="*"/>
+                                <DataGridTextColumn Header="Close price" Binding="{Binding ClosePrice}" Width="*"/>
+                                <DataGridTextColumn Header="Total price" Binding="{Binding TotalPrice}" Width="*"/>
+                                <DataGridTextColumn Header="Total volume" Binding="{Binding TotalVolume}" Width="*"/>
+                                <DataGridTextColumn Header="Open time" Binding="{Binding OpenTime}" Width="*"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+
+                        <DataGrid Grid.Row="1" ItemsSource="{Binding FetchedCandles}" AutoGenerateColumns="False" CanUserAddRows="False">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Open price" Binding="{Binding OpenPrice}" Width="*"/>
+                                <DataGridTextColumn Header="High price" Binding="{Binding HighPrice}" Width="60"/>
+                                <DataGridTextColumn Header="Low price" Binding="{Binding LowPrice}" Width="*"/>
+                                <DataGridTextColumn Header="Close price" Binding="{Binding ClosePrice}" Width="*"/>
+                                <DataGridTextColumn Header="Total price" Binding="{Binding TotalPrice}" Width="*"/>
+                                <DataGridTextColumn Header="Total volume" Binding="{Binding TotalVolume}" Width="*"/>
+                                <DataGridTextColumn Header="Open time" Binding="{Binding OpenTime}" Width="*"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </Grid>
+                </DockPanel>
+            </GroupBox>
+        </Grid>
     </Grid>
 </UserControl>

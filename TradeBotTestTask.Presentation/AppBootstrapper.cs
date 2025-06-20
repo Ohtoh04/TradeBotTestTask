@@ -9,7 +9,6 @@ using TradeBotTestTask.Presentation.ViewModels;
 
 namespace TradeBotTestTask.Presentation;
 
-//You may ask, why caliburn? Answer: because i have nothing better to do
 public class AppBootstrapper : BootstrapperBase
 {
     private ServiceProvider _services = null!;
@@ -38,7 +37,8 @@ public class AppBootstrapper : BootstrapperBase
 
 
         // View‑models
-        serviceCollection.AddTransient<ShellViewModel>();
+        serviceCollection.AddSingleton<ShellViewModel>();
+        serviceCollection.AddSingleton<PortfolioViewModel>();
 
         _services = serviceCollection.BuildServiceProvider();
     }
